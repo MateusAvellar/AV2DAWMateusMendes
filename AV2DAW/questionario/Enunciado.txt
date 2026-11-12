@@ -1,0 +1,1 @@
+Fazer a prova da AV1 usando Javascript para enviar as requisições e receber o dados do PHP.

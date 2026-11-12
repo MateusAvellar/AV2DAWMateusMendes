@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>CRUD Questionário e Usuários (JS + PHP)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; background: #f4f4f9; }
+        .card { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h2, h3 { margin-top: 0; color: #333; }
+        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 8px; margin: 5px 0 10px; box-sizing: border-box; }
+        .alt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        .alt-row input[type="text"] { margin: 0; }
+        button { padding: 8px 14px; cursor: pointer; border: none; border-radius: 4px; background: #007bff; color: white; }
+        button:hover { background: #0056b3; }
+        button.btn-danger { background: #dc3545; }
+        button.btn-warning { background: #ffc107; color: #000; }
+        button.btn-secondary { background: #6c757d; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #eee; }
+        .msg { padding: 10px; margin-bottom: 15px; border-radius: 4px; display: none; }
+        .msg.ok { background: #d4edda; color: #155724; display: block; }
+        .msg.erro { background: #f8d7da; color: #721c24; display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="feedback" class="msg"></div>
+
+    <!-- SEÇÃO 1: PERGUNTAS -->
+    <div class="card">
+        <h2 id="titulo-form-pergunta">Nova Pergunta</h2>
+        
+        <label>Tipo de Pergunta:</label>
+        <select id="tipo-pergunta" onchange="alternarTipoPergunta()" style="padding: 6px; margin-bottom: 15px;">
+            <option value="multipla">Múltipla Escolha</option>
+            <option value="discursiva">Discursiva</option>
+        </select>
+
+        <form id="form-pergunta" onsubmit="salvarPergunta(event)">
+            <input type="hidden" id="pergunta-id" name="id" value="">
+
+            <label>Enunciado da Pergunta:</label>
+            <input type="text" id="pergunta-texto" name="pergunta" required>
+
+            <!-- Campos para Múltipla Escolha -->
+            <div id="box-multipla">
+                <label>Alternativas (marque a bolinha da correta):</label>
+                <div class="alt-row"><input type="radio" name="correta" value="0" checked> <input type="text" name="alternativas[]" placeholder="Alternativa A"></div>
+                <div class="alt-row"><input type="radio" name="correta" value="1"> <input type="text" name="alternativas[]" placeholder="Alternativa B"></div>
+                <div class="alt-row"><input type="radio" name="correta" value="2"> <input type="text" name="alternativas[]" placeholder="Alternativa C"></div>
+                <div class="alt-row"><input type="radio" name="correta" value="3"> <input type="text" name="alternativas[]" placeholder="Alternativa D"></div>
+            </div>
+
+            <!-- Campos para Discursiva -->
+            <div id="box-discursiva" style="display: none;">
+                <label>Gabarito Esperado:</label>
+                <input type="text" id="gabarito-texto" name="gabarito" placeholder="Resposta correta">
+            </div>
+
+            <div style="margin-top: 15px;">
+                <button type="submit">Salvar Pergunta</button>
+                <button type="button" class="btn-secondary" onclick="resetarFormPergunta()">Cancelar / Limpar</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Lista de Perguntas Cadastradas</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Tipo</th>
+                    <th>Pergunta</th>
+                    <th>Respostas / Gabarito</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody id="tabela-perguntas"></tbody>
+        </table>
+    </div>
+
+    <!-- SEÇÃO 2: USUÁRIOS -->
+    <div class="card">
+        <h2 id="titulo-form-usuario">Novo Usuário</h2>
+        <form id="form-usuario" onsubmit="salvarUsuario(event)">
+            <input type="hidden" id="usuario-id" name="id" value="">
+            <input type="hidden" id="usuario-acao" name="acao" value="novo">
+
+            <label>Nome:</label>
+            <input type="text" id="usuario-nome" name="nome" required>
+
+            <label>E-mail:</label>
+            <input type="email" id="usuario-email" name="email" required>
+
+            <label>Senha (deixe em branco na edição para manter):</label>
+            <input type="password" id="usuario-senha" name="senha">
+
+            <button type="submit">Salvar Usuário</button>
+            <button type="button" class="btn-secondary" onclick="resetarFormUsuario()">Cancelar / Limpar</button>
+        </form>
+
+        <h3 style="margin-top: 20px;">Lista de Usuários</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody id="tabela-usuarios"></tbody>
+        </table>
+    </div>
+
+<script>
+    // Armazena os dados carregados em memória para facilitar a edição
+    let dadosCache = { perguntas: [], respostas: {} };
+
+    // Exibe mensagens de sucesso ou erro
+    function mostrarMensagem(texto, sucesso = true) {
+        const div = document.getElementById('feedback');
+        div.textContent = texto;
+        div.className = 'msg ' + (sucesso ? 'ok' : 'erro');
+        setTimeout(() => div.style.display = 'none', 4000);
+    }
+
+    // Alterna os inputs entre Múltipla Escolha e Discursiva
+    function alternarTipoPergunta() {
+        const tipo = document.getElementById('tipo-pergunta').value;
+        document.getElementById('box-multipla').style.display = (tipo === 'multipla') ? 'block' : 'none';
+        document.getElementById('box-discursiva').style.display = (tipo === 'discursiva') ? 'block' : 'none';
+    }
+
+    // ==================== CRUD DE PERGUNTAS ====================
+
+    async function carregarPerguntas() {
+        const res = await fetch('Listar.php');
+        const data = await res.json();
+        dadosCache = data;
+
+        const tbody = document.getElementById('tabela-perguntas');
+        tbody.innerHTML = '';
+
+        data.perguntas.forEach(p => {
+            const alts = data.respostas[p.id] || [];
+            const ehMultipla = alts.length > 0;
+            
+            let detalhes = '';
+            if (ehMultipla) {
+                detalhes = alts.map(a => a.correta ? `<strong>${a.texto} (Correta)</strong>` : a.texto).join('<br>');
+            } else {
+                detalhes = `<em>Gabarito:</em> ${p.gabarito}`;
+            }
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${p.id}</td>
+                    <td>${ehMultipla ? 'Múltipla Escolha' : 'Discursiva'}</td>
+                    <td>${p.pergunta}</td>
+                    <td>${detalhes}</td>
+                    <td>
+                        <button class="btn-warning" onclick="prepararEdicaoPergunta(${p.id})">Editar</button>
+                        <button class="btn-danger" onclick="excluirPergunta(${p.id})">Excluir</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    async function salvarPergunta(event) {
+        event.preventDefault();
+        const form = document.getElementById('form-pergunta');
+        const formData = new FormData(form);
+        
+        const id = document.getElementById('pergunta-id').value;
+        const tipo = document.getElementById('tipo-pergunta').value;
+
+        // Define qual arquivo PHP vai receber a requisição
+        let url = '';
+        if (id === '') {
+            url = (tipo === 'multipla') ? 'MultiplaEscolha.php' : 'Discursiva.php';
+        } else {
+            url = (tipo === 'multipla') ? 'AlterarMultipla.php' : 'AlterarDiscursiva.php';
+        }
+
+        const res = await fetch(url, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        mostrarMensagem(data.mensagem, data.sucesso);
+        if (data.sucesso) {
+            resetarFormPergunta();
+            carregarPerguntas();
+        }
+    }
+
+    function prepararEdicaoPergunta(id) {
+        const p = dadosCache.perguntas.find(item => item.id === id);
+        const alts = dadosCache.respostas[id] || [];
+        const ehMultipla = alts.length > 0;
+
+        document.getElementById('titulo-form-pergunta').textContent = `Editando Pergunta #${id}`;
+        document.getElementById('pergunta-id').value = id;
+        document.getElementById('pergunta-texto').value = p.pergunta;
+        
+        const selectTipo = document.getElementById('tipo-pergunta');
+        selectTipo.value = ehMultipla ? 'multipla' : 'discursiva';
+        selectTipo.disabled = true; // Impede mudar o tipo durante a edição
+        alternarTipoPergunta();
+
+        if (ehMultipla) {
+            const inputsTexto = document.querySelectorAll('input[name="alternativas[]"]');
+            const radios = document.querySelectorAll('input[name="correta"]');
+            inputsTexto.forEach((inp, idx) => {
+                inp.value = alts[idx] ? alts[idx].texto : '';
+                if (alts[idx] && alts[idx].correta === 1) {
+                    radios[idx].checked = true;
+                }
+            });
+        } else {
+            document.getElementById('gabarito-texto').value = p.gabarito;
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function excluirPergunta(id) {
+        if (!confirm(`Deseja realmente excluir a pergunta #${id}?`)) return;
+
+        const formData = new FormData();
+        formData.append('id', id);
+
+        const res = await fetch('Excluir.php', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        mostrarMensagem(data.mensagem, data.sucesso);
+        if (data.sucesso) carregarPerguntas();
+    }
+
+    function resetarFormPergunta() {
+        document.getElementById('form-pergunta').reset();
+        document.getElementById('pergunta-id').value = '';
+        document.getElementById('titulo-form-pergunta').textContent = 'Nova Pergunta';
+        document.getElementById('tipo-pergunta').disabled = false;
+        alternarTipoPergunta();
+    }
+
+    // ==================== CRUD DE USUÁRIOS ====================
+
+    async function carregarUsuarios() {
+        const res = await fetch('Usuario.php?acao=listar');
+        const data = await res.json();
+
+        const tbody = document.getElementById('tabela-usuarios');
+        tbody.innerHTML = '';
+
+        data.usuarios.forEach(u => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${u.id}</td>
+                    <td>${u.nome}</td>
+                    <td>${u.email}</td>
+                    <td>
+                        <button class="btn-warning" onclick="prepararEdicaoUsuario(${u.id}, '${u.nome}', '${u.email}')">Editar</button>
+                        <button class="btn-danger" onclick="excluirUsuario(${u.id})">Excluir</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    async function salvarUsuario(event) {
+        event.preventDefault();
+        const form = document.getElementById('form-usuario');
+        const formData = new FormData(form);
+
+        const res = await fetch('Usuario.php', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        mostrarMensagem(data.mensagem, data.sucesso);
+        if (data.sucesso) {
+            resetarFormUsuario();
+            carregarUsuarios();
+        }
+    }
+
+    function prepararEdicaoUsuario(id, nome, email) {
+        document.getElementById('titulo-form-usuario').textContent = `Editando Usuário #${id}`;
+        document.getElementById('usuario-id').value = id;
+        document.getElementById('usuario-acao').value = 'editar';
+        document.getElementById('usuario-nome').value = nome;
+        document.getElementById('usuario-email').value = email;
+        document.getElementById('usuario-senha').value = '';
+    }
+
+    async function excluirUsuario(id) {
+        if (!confirm(`Excluir usuário #${id}?`)) return;
+
+        const formData = new FormData();
+        formData.append('acao', 'excluir');
+        formData.append('id', id);
+
+        const res = await fetch('Usuario.php', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        mostrarMensagem(data.mensagem, data.sucesso);
+        if (data.sucesso) carregarUsuarios();
+    }
+
+    function resetarFormUsuario() {
+        document.getElementById('form-usuario').reset();
+        document.getElementById('usuario-id').value = '';
+        document.getElementById('usuario-acao').value = 'novo';
+        document.getElementById('titulo-form-usuario').textContent = 'Novo Usuário';
+    }
+
+    // Carrega as listas assim que a página abre
+    window.onload = () => {
+        carregarPerguntas();
+        carregarUsuarios();
+    };
+</script>
+</body>
+</html>
